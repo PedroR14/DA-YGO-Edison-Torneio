@@ -129,6 +129,11 @@ input:disabled{opacity:.6}
  .seg button{font-size:12px}
  button.b{font-size:12px;padding:10px 12px}
 }
+
+.smt{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.mt.sm>span{padding:6px}
+.mt.sm select{width:100%;padding:8px 6px;font-size:14px;font-weight:600;background:#0b0918}
+.mt.sm .tb{display:block;margin-top:3px}
 </style>
 </head>
 <body>
@@ -352,6 +357,7 @@ const fileBase=l=>l.name.replace(/[^\p{L}\p{N}]+/gu,'-').replace(/^-|-$/g,'').to
 
 /* ---------- Ações ---------- */
 function act(a,el){
+  if(a.startsWith('s_'))return simAct(a,el);
   const d=el.dataset;
   switch(a){
     case'add':{const i=document.getElementById('nome');const v=i.value.trim();if(!v)return;
@@ -497,6 +503,152 @@ function vHist(){
       <span class="hc">${l.champion?'★ '+esc(l.champion):'<span class="small">'+esc(l.status)+'</span>'}</span></button>${body}</div>`;
   }).join('');
 }
+
+/* ---------- Simulador (não mexe no torneio real) ---------- */
+const SK='torneio-sim-v1';
+function simFresh(){return{players:[],cfg:{rounds:0,top:8,drawPts:1},rounds:[{matches:[]}],nid:1,topRes:{},sig:'',src:'Do zero'}}
+let SIM=lget(SK,null)||simFresh();
+function simSave(){lset(SK,SIM)}
+function simView(){
+  return{players:SIM.players,cfg:SIM.cfg,top:null,phase:'swiss',nid:SIM.nid,champion:null,
+    rounds:SIM.rounds.map(r=>({matches:r.matches.filter(m=>m.a&&(m.bye||m.b)&&m.a!==m.b).map(m=>({a:m.a,b:m.bye?null:m.b,r:m.bye?'BYE':(m.r||null)}))}))};
+}
+function inSim(fn,upto){const keep=S;const v=simView();if(upto!=null)v.rounds=v.rounds.slice(0,upto);S=v;try{return fn()}finally{S=keep}}
+function simIssues(ri){
+  const r=SIM.rounds[ri],seen={},out=[];
+  r.matches.forEach(m=>[m.a,m.bye?null:m.b].forEach(id=>{if(id)seen[id]=(seen[id]||0)+1}));
+  const dup=Object.keys(seen).filter(k=>seen[k]>1).map(k=>inSim(()=>nm(+k)));
+  if(dup.length)out.push('Em mais de uma mesa: '+dup.join(', '));
+  const miss=SIM.players.filter(p=>!seen[p.id]).map(p=>p.name);
+  if(miss.length&&r.matches.length)out.push('Sem mesa nesta rodada: '+miss.join(', '));
+  const prev=new Set();SIM.rounds.slice(0,ri).forEach(x=>x.matches.forEach(m=>{if(m.a&&m.b&&!m.bye)prev.add(k(m.a,m.b))}));
+  const re=r.matches.filter(m=>m.a&&m.b&&!m.bye&&prev.has(k(m.a,m.b))).map(m=>inSim(()=>nm(m.a)+' × '+nm(m.b)));
+  if(re.length)out.push('Revanche: '+re.join(', '));
+  const pend=r.matches.filter(m=>m.a&&m.b&&m.a!==m.b&&!m.bye&&!m.r).length;if(pend)out.push(pend+' mesa(s) sem resultado');
+  return out;
+}
+function simLoadLog(l){
+  const sim=simFresh();sim.src='Histórico: '+l.name;sim.cfg={rounds:0,top:l.cfg.top||8,drawPts:l.cfg.drawPts??1};
+  const id={};l.players.forEach(p=>{id[low(p.name)]=sim.nid;sim.players.push({id:sim.nid++,name:p.name,dropped:false})});
+  const g=n=>n==null?null:id[low(n)];
+  sim.rounds=l.rounds.map(r=>({matches:r.matches.map(m=>m.b==null?{a:g(m.a),b:null,bye:true,r:null}:{a:g(m.a),b:g(m.b),r:m.r||null})}));
+  if(!sim.rounds.length)sim.rounds=[{matches:[]}];
+  return sim;
+}
+function simAct(a,el){
+  const d=el.dataset;
+  switch(a){
+    case's_new':SIM=simFresh();break;
+    case's_fold':{ST.simFold=ST.simFold||{};ST.simFold[+d.r]=d.o!=='1';render();return}
+    case's_cad':ST.simCad=!ST.simCad;render();return;
+    case's_cur':{if(!S.players.length)return toast('Não há torneio atual');
+      SIM=simFresh();SIM.src='Cópia do torneio atual';SIM.cfg={rounds:0,top:S.cfg.top||8,drawPts:S.cfg.drawPts};
+      SIM.players=S.players.map(p=>({id:p.id,name:p.name,dropped:false}));SIM.nid=S.nid;
+      SIM.rounds=S.rounds.map(r=>({matches:r.matches.map(m=>m.b==null?{a:m.a,b:null,bye:true,r:null}:{a:m.a,b:m.b,r:m.r})}));
+      if(!SIM.rounds.length)SIM.rounds=[{matches:[]}];toast('Torneio atual copiado');break}
+    case's_log':{ST.simFold={};const l=ST.logs.find(x=>x.id===el.value);el.value='';if(!l)return;SIM=simLoadLog(l);toast('Carregado: '+l.name);break}
+    case's_add':{const i=document.getElementById('snome');const ns=i.value.split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean);
+      ns.forEach(n=>{if(!SIM.players.some(p=>low(p.name)===low(n)))SIM.players.push({id:SIM.nid++,name:n,dropped:false})});i.value='';break}
+    case's_tog':{const n=ST.roster[+d.i];const p=SIM.players.find(x=>low(x.name)===low(n));
+      if(p){if(simUsed(p.id))return toast(n+' já está em mesas da simulação');SIM.players=SIM.players.filter(x=>x!==p)}
+      else SIM.players.push({id:SIM.nid++,name:n,dropped:false});break}
+    case's_rmp':{const id=+d.id;if(simUsed(id))return toast('Tire esse duelista das mesas antes');SIM.players=SIM.players.filter(p=>p.id!==id);break}
+    case's_A':case's_B':{const m=SIM.rounds[+d.r].matches[+d.m];const v=el.value;
+      if(a==='s_A')m.a=v?+v:null;else{if(v==='bye'){m.bye=true;m.b=null;m.r=null}else{m.bye=false;m.b=v?+v:null}}break}
+    case's_res':{const m=SIM.rounds[+d.r].matches[+d.m];m.r=m.r===d.v?null:d.v;break}
+    case's_mesa':SIM.rounds[+d.r].matches.push({a:null,b:null,r:null});break;
+    case's_rmm':SIM.rounds[+d.r].matches.splice(+d.m,1);break;
+    case's_round':SIM.rounds.push({matches:[]});ST.simFold={};break;
+    case's_rmr':SIM.rounds.splice(+d.r,1);if(!SIM.rounds.length)SIM.rounds=[{matches:[]}];break;
+    case's_auto':{const ri=+d.r;if(SIM.players.length<2)return toast('Adicione duelistas');
+      const res=inSim(()=>makePairings(),ri);
+      SIM.rounds[ri].matches=res.matches.map(m=>m.b==null?{a:m.a,b:null,bye:true,r:null}:{a:m.a,b:m.b,r:null});
+      if(res.rematch)toast('Atenção: revanche inevitável');break}
+    case's_rand':{const ri=+d.r;const o=['A20','A21','B21','B20'];SIM.rounds[ri].matches.forEach(m=>{if(m.a&&m.b&&!m.bye&&!m.r)m.r=o[Math.floor(Math.random()*4)]});break}
+    case's_clear':{SIM.rounds[+d.r].matches.forEach(m=>{if(!m.bye)m.r=null});break}
+    case's_cfg':SIM.cfg[d.k]=+el.value;break;
+    case's_top':{const key=d.k;SIM.topRes[key]=SIM.topRes[key]===d.v?null:d.v;break}
+    case's_toapp':{ // leva os duelistas da simulação para o cadastro
+      const c=addToRoster(SIM.players.map(p=>p.name));toast(c+' novo(s) no cadastro');return}
+  }
+  simSave();render();
+}
+function simUsed(id){return SIM.rounds.some(r=>r.matches.some(m=>m.a===id||m.b===id))}
+function simBracket(seeds){
+  // seeds: array de ids na ordem da classificação
+  const n=SIM.cfg.top,ord=seedOrder(n);
+  let cur=[];for(let i=0;i<ord.length;i+=2)cur.push({a:seeds[ord[i]-1],b:seeds[ord[i+1]-1],sa:ord[i],sb:ord[i+1]});
+  const phases=[];let pi=0;
+  while(cur.length){
+    const ph={name:topName(cur.length),ms:cur.map((m,i)=>({...m,key:pi+'-'+i,r:SIM.topRes[pi+'-'+i]||null}))};phases.push(ph);
+    if(cur.length===1||ph.ms.some(m=>!m.r))break;
+    const w=ph.ms.map(m=>m.r==='A'?{id:m.a,s:m.sa}:{id:m.b,s:m.sb});
+    cur=[];for(let i=0;i<w.length;i+=2)cur.push({a:w[i].id,b:w[i+1].id,sa:w[i].s,sb:w[i+1].s});pi++;
+  }
+  const last=phases[phases.length-1];
+  const champ=last&&last.ms.length===1&&last.ms[0].r?(last.ms[0].r==='A'?last.ms[0].a:last.ms[0].b):null;
+  return{phases,champ};
+}
+function vSim(){return inSim(()=>{
+  const ps=SIM.players,opt=(sel,extra)=>`<option value="">— escolher —</option>${extra||''}${ps.map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}`;
+  const rosterChips=ST.roster.length?`<p style="margin-top:10px"><button class="b ${ST.simCad?'p':''}" data-a="s_cad">${ST.simCad?'Fechar cadastro':'Escolher do cadastro'}</button></p>${ST.simCad?`<div class="chips" style="margin-top:10px">${ST.roster.map((n,i)=>{const on=ps.some(p=>low(p.name)===low(n));return `<button class="chip ${on?'on':''}" data-a="s_tog" data-i="${i}">${on?'✓ ':''}${esc(n)}</button>`}).join('')}</div>`:''}`:'';
+  const logs=ST.logs.slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+  let html=`<div class="card"><h2>Simulador</h2>
+   <p class="hint" style="margin-top:-4px">Monte ou reconstrua um torneio, coloque os resultados e veja como fica a tabela e quem entraria no top. <b>Nada aqui altera o torneio real.</b></p>
+   <p class="small" style="margin-top:8px">Simulação atual: ${esc(SIM.src)}</p>
+   <div class="row" style="margin-top:10px"><button class="b" data-a="s_cur">Copiar torneio atual</button><button class="b d" data-c="s_new">Começar do zero</button></div>
+   ${logs.length?`<label class="f" style="margin-top:10px">Carregar torneio do histórico<select data-a="s_log"><option value="">— escolher —</option>${logs.map(l=>`<option value="${l.id}">${esc(l.name)} · ${new Date(l.startedAt).toLocaleDateString('pt-BR')}</option>`).join('')}</select></label>`:''}
+  </div>
+  <div class="card"><h2>Duelistas da simulação (${ps.length})</h2>
+   <form class="row" onsubmit="event.preventDefault();act('s_add',this)"><input type="text" id="snome" placeholder="Nome (ou vários com vírgula)" autocomplete="off"><button class="b p">Adicionar</button></form>
+   ${rosterChips}
+   <ul class="pl">${ps.map(p=>`<li><span>${esc(p.name)}</span><button class="x" data-a="s_rmp" data-id="${p.id}" aria-label="Remover">×</button></li>`).join('')}</ul>
+   ${ps.length?'<p style="margin-top:10px"><button class="b" data-a="s_toapp">Salvar estes nomes no cadastro</button></p>':''}
+  </div>`;
+  SIM.rounds.forEach((r,ri)=>{
+    const before=statsUntil(ri);
+    const iss=simIssues(ri);
+    const open=ST.simFold&&ri in ST.simFold?ST.simFold[ri]:ri===SIM.rounds.length-1;
+    const head=`<button class="hrow" data-a="s_fold" data-r="${ri}" data-o="${open?1:0}"><h2 style="margin:0;border:0;padding:0">Rodada ${ri+1} <span class="small">· ${r.matches.length} mesa${r.matches.length===1?'':'s'}${iss.length?' · ⚠ '+iss.length:(r.matches.length?' · ✓':'')}</span></h2><span class="hc">${open?'▲':'▼'}</span></button>`;
+    if(!open){html+=`<div class="card">${head}</div>`;return}
+    html+=`<div class="card">${head}<div style="height:10px"></div>
+    ${r.matches.map((m,mi)=>{
+      const b=(v,l)=>`<button class="${m.r===v?'on':''}" data-a="s_res" data-r="${ri}" data-m="${mi}" data-v="${v}" ${m.bye||!m.a||!m.b?'disabled':''}>${l}</button>`;
+      const pa=m.a&&before[m.a]?before[m.a].pts+' pts':'',pb=m.b&&before[m.b]?before[m.b].pts+' pts':'';
+      return `<div class="match"><div class="smt"><span class="small">Mesa ${mi+1}</span><button class="x" data-a="s_rmm" data-r="${ri}" data-m="${mi}" aria-label="Remover mesa">×</button></div>
+      <div class="mt sm"><span><select data-a="s_A" data-r="${ri}" data-m="${mi}">${opt(m.a)}</select><span class="tb">${pa}</span></span><span class="vs">VS</span>
+      <span><select data-a="s_B" data-r="${ri}" data-m="${mi}">${opt(m.bye?'bye':m.b,`<option value="bye" ${m.bye?'selected':''}>— BYE (vitória) —</option>`)}</select><span class="tb">${m.bye?'':pb}</span></span></div>
+      ${m.bye?'':`<div class="seg">${b('A20','2-0')}${b('A21','2-1')}${b('D','Emp')}${b('B21','1-2')}${b('B20','0-2')}</div>`}</div>`}).join('')}
+    ${iss.map(t=>`<p class="warn">⚠ ${esc(t)}</p>`).join('')}
+    <div class="row" style="margin-top:10px"><button class="b" data-a="s_mesa" data-r="${ri}">+ Mesa</button><button class="b" data-a="s_auto" data-r="${ri}">Parear automático (suíço)</button></div>
+    <div class="row" style="margin-top:8px"><button class="b" data-a="s_rand" data-r="${ri}">🎲 Resultados aleatórios nos vazios</button><button class="b" data-a="s_clear" data-r="${ri}">Limpar resultados</button></div>
+    ${SIM.rounds.length>1?`<p style="margin-top:8px"><button class="b d" data-c="s_rmr" data-r="${ri}">Apagar rodada ${ri+1}</button></p>`:''}
+    </div>`;
+  });
+  html+=`<button class="b p full" data-a="s_round">+ Adicionar rodada ${SIM.rounds.length+1}</button>`;
+  // classificação
+  const sd=standings(),cut=SIM.cfg.top;
+  const tops=[0,2,4,8,16,32].map(v=>`<option value="${v}" ${cut===v?'selected':''}>${v?'Top '+v:'Sem top'}</option>`).join('');
+  html+=`<h2 class="sec">Resultado da simulação</h2><div class="card"><h2>Tabela simulada</h2>
+   <div class="grid2" style="margin-bottom:10px"><label class="f">Corte<select data-a="s_cfg" data-k="top">${tops}</select></label>
+   <label class="f">Pontos por empate<select data-a="s_cfg" data-k="drawPts">${[0,1].map(v=>`<option value="${v}" ${SIM.cfg.drawPts===v?'selected':''}>${v}</option>`).join('')}</select></label></div>
+   ${ps.length?`<div style="overflow-x:auto"><table><thead><tr><th>#</th><th class="n">Duelista</th><th>Pts</th><th>V-D-E</th><th>OWP</th><th>OOWP</th><th>GW%</th></tr></thead><tbody>
+   ${sd.map((x,i)=>`<tr class="${cut&&i+1===cut&&sd.length>cut?'cut':''}"><td>${i+1}</td><td class="n">${esc(nm(x.id))}</td><td><b>${x.pts}</b></td><td>${x.w}-${x.l}-${x.d}</td><td>${pct(x.owp)}</td><td>${pct(x.oowp)}</td><td>${pct(x.gwp)}</td></tr>`).join('')}</tbody></table></div>
+   ${cut?`<p class="hint">Linha dourada = corte do Top ${cut}.</p>`:''}`:'<p class="hint">Adicione duelistas para começar.</p>'}</div>`;
+  // top
+  if(cut&&ps.length>=cut){
+    const seeds=sd.slice(0,cut).map(x=>x.id),sig=seeds.join(',');
+    if(SIM.sig!==sig){SIM.sig=sig;SIM.topRes={};simSave()}
+    const br=simBracket(seeds);
+    html+=`<div class="card"><h2>Top ${cut} que daria</h2>
+    ${br.champ!=null?`<div class="champ" style="padding:14px 0"><div class="t">★ Campeão simulado ★</div><div class="nm">${esc(nm(br.champ))}</div></div>`:''}
+    ${br.phases.map((ph,pi)=>`<p class="small" style="margin:12px 0 4px;font:700 12px Cinzel,serif;letter-spacing:.1em;color:var(--gold)">${ph.name.toUpperCase()}</p>${ph.ms.map(m=>{
+      const b=(v,l)=>`<button class="${m.r===v?'on':''}" data-a="s_top" data-k="${m.key}" data-v="${v}">${l}</button>`;
+      return `<div class="match"><div class="mt"><span class="${m.r==='A'?'w':''}"><span class="tb">Seed #${m.sa}</span><br>${esc(nm(m.a))}</span><span class="vs">VS</span><span class="${m.r==='B'?'w':''}"><span class="tb">Seed #${m.sb}</span><br>${esc(nm(m.b))}</span></div><div class="seg two">${b('A','◀ Venceu')}${b('B','Venceu ▶')}</div></div>`}).join('')}`).join('')}
+    <p class="hint">Escolha os vencedores para ver o chaveamento até a final. Se a tabela mudar, o top recomeça.</p></div>`;
+  }else if(cut&&ps.length)html+=`<div class="card"><p class="hint">São necessários pelo menos ${cut} duelistas para simular o Top ${cut}.</p></div>`;
+  return html;
+})}
 function matchView(m,ri,mi,st){
   if(m.b==null)return `<div class="match"><div class="byeline"><span>${esc(nm(m.a))}</span><span class="bye">BYE · VITÓRIA</span></div></div>`;
   const b=(v,l)=>`<button class="${m.r===v?'on':''}" data-a="res" data-r="${ri}" data-m="${mi}" data-v="${v}">${l}</button>`;
@@ -601,12 +753,12 @@ function vTop(){
 function render(){
   const tabs=[['jog','Duelistas'],['rod','Rodadas'],['cla','Tabela']];
   if(S.cfg.top)tabs.push(['top','Top '+S.cfg.top]);
-  tabs.push(['his','Histórico']);
+  tabs.push(['sim','Simulador'],['his','Histórico']);
   if(!tabs.some(t=>t[0]===tab))tab='jog';
   document.getElementById('nav').innerHTML=tabs.map(([k,l])=>`<button class="${tab===k?'on':''}" data-a="tab" data-t="${k}">${l}</button>`).join('');
   const ph={setup:'Preparando',swiss:`Suíço · rodada ${S.rounds.length}/${nRounds()}`,top:'Top cut',done:'Encerrado'}[S.phase];
   document.getElementById('status').textContent=ph;
-  document.getElementById('app').innerHTML={jog:vJog,rod:vRod,cla:vCla,top:vTop,his:vHist}[tab]();
+  document.getElementById('app').innerHTML={jog:vJog,rod:vRod,cla:vCla,top:vTop,his:vHist,sim:vSim}[tab]();
 }
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-a],[data-c]');if(!el||el.tagName==='SELECT'||el.disabled)return;

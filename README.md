@@ -1,4 +1,6 @@
-# Torneio Suíço – Formato Edison
+# Duelistas Arretados – Torneio Suíço (Formato Edison)
+
+App de torneios da **Duelistas Arretados [Card Game Store]**.
 
 Gerenciador de torneio de Yu-Gi-Oh! no **formato Edison** (lista de março de 2010), feito para lojas e grupos de jogo. Funciona no navegador do celular ou do computador, sem instalar nada e sem servidor.
 
@@ -12,6 +14,7 @@ Gerenciador de torneio de Yu-Gi-Oh! no **formato Edison** (lista de março de 20
 - **Top cut** de 2, 4, 8 ou 16, com seeds no padrão 1×8, 4×5, 2×7 e 3×6. Também dá para jogar só o suíço.
 - **Drop** de jogador, correção de resultados e desfazer rodada.
 - **Cadastro de duelistas**, com importação de lista (.txt/.csv ou colando os nomes) e exportação.
+- **Simulador:** reconstrua um torneio anterior (do histórico, do torneio atual ou do zero), monte as mesas e os resultados à mão ou com pareamento automático e veja a tabela e o top que daria. Não altera o torneio real.
 - **Histórico de torneios** salvo automaticamente, com registro completo e download em .txt e .csv.
 - **Instalável no celular:** é só usar "Adicionar à tela inicial".
 
@@ -30,11 +33,11 @@ Os dados ficam salvos no navegador do aparelho (localStorage). Limpar os dados d
 |---|---|
 | `index.html` | O app inteiro: HTML, CSS e JavaScript num arquivo só |
 | `manifest.json` | Permite instalar como app no celular |
-| `icon.svg`, `icon-192.png`, `icon-512.png` | Ícones |
+| `icon-192.png`, `icon-512.png` | Ícones (logo da loja) |
 
 ## Aviso
 
-Projeto de fã, sem vínculo com a Konami. Yu-Gi-Oh! é marca registrada dos seus respectivos donos. O app não usa logos nem artes oficiais.
+Projeto de fã, sem vínculo com a Konami. Yu-Gi-Oh! é marca registrada dos seus respectivos donos. A logo é da loja Duelistas Arretados.
 
 ## Licença
 

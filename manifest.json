@@ -1,6 +1,6 @@
 {
-  "name": "Torneio Suíço – Formato Edison",
-  "short_name": "Torneio Edison",
+  "name": "Duelistas Arretados – Torneio Suíço Edison",
+  "short_name": "Arretados",
   "description": "Gerenciador de torneio suíço de Yu-Gi-Oh! no formato Edison.",
   "start_url": "./",
   "scope": "./",
@@ -9,8 +9,15 @@
   "theme_color": "#07060f",
   "lang": "pt-BR",
   "icons": [
-    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
-    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
-    {"src": "icon.svg", "sizes": "any", "type": "image/svg+xml"}
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }
